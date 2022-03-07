@@ -1,0 +1,145 @@
+---
+title: "Week 9 - Multiple Linear Regression - continued"
+author: "Prof. Hsu"
+date: "2/23/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+# Make sure to select the appropriate working directory using the 'Knit < Knit Directory' function in R Studio. 
+# Another way to do it is by using knitr::opts_knit below:
+knitr::opts_knit$set(root.dir = '~/Documents/GitHub/PLCY715/Week-9') # change your root directory path here
+```
+
+## Week 9 - Multiple Linear Regression Continued
+
+Last week we learned how to conduct linear regression modeling in R. Today we'll continue exploring some of the ways we can further develop multiple linear regression models - by including more than one continuous variable and interaction effects between two continuous variables.
+
+### Libraries needed 
+We will need tidyverse and ggplot2. We'll will also use some of the functions that our textbook ModernDive has developed.
+```{r, results=FALSE, message=FALSE}
+library(tidyverse)
+library(ggplot2)
+library(moderndive)
+library(GGally)
+```
+
+### Multiple Linear Regression Continued - Two numerical explanatory variables
+We learned last week how to conduct simple and multiple linear regression. For the latter, we chiefly examined models that include a numerical and categorical explanatory variable and two ways we can model them through the 'parallel slopes' and the 'interaction' approaches. But what if we have more than one numerical variable? How do would we model them and interpret the output?
+
+Let's continue using our 'weather-crime' data for Boston:  
+```{r, message=FALSE}
+weather_crimes <- read_csv("data/weather_crimes_Boston.csv")
+
+```
+
+Let's first return to our scatterplot matrix to remind ourselves about the continuous variables in our dataset:
+```{r}
+weather_crimes %>% dplyr::select(nb_crimes, TEMP:PRCP) %>%
+  ggpairs()
+
+```
+From the scatterplot matrix, which variables appear to be highly correlated?
+
+We refer to highly correlated variables as being collinear or multicollinear (if more than two). Including them both in a regression model will likely only confuse are ability to interpret between them and to understand what's really going. So for now, let's stick with two variables that don't appear to be collinear, TEMP and Wind.
+
+```{r}
+# Fit the model
+wc_model <- lm(nb_crimes ~ TEMP + Wind, data=weather_crimes)
+
+# Review the summary
+wc_model %>% summary
+```
+What does this tell us about the relationship between Wind, Temperature, and the number of crimes?
+
+Can we plot to get a better sense of what's going on? We could refer back to our scatterplot matrix, but it only allows us to examine bivariate relationships. Thankfully, there's a package in R that can help (of course!). 
+```{r, message=FALSE}
+# install.packages("plotly")
+library(plotly)
+```
+
+To visualize the joint relationship of all three variables simultaneously, we need a 3-dimensional (3D) scatterplot. Each of our observations are marked with a black point where:  
+
+- The numerical outcome variable y (nb_crimes) is on the vertical axis.  
+- The two numerical explanatory variables, TEMP and Wind, are on the two axes that form the bottom plane.  
+We also include the regression plane. Remember that regression lines are “best-fitting” in that of all possible lines we can draw through a cloud of points, the regression line minimizes the sum of squared residuals. This concept also extends to models with two numerical explanatory variables. The difference is instead of a “best-fitting” line, we now have a “best-fitting” plane that similarly minimizes the sum of squared residuals, according to Modern Dive.
+
+```{r}
+# Compute a grid of x,y values for the plane
+x <- seq(min(weather_crimes$TEMP),
+  max(weather_crimes$TEMP),
+  length.out = 10
+)
+y <- seq(min(weather_crimes$Wind),
+  max(weather_crimes$Wind),
+  length.out = 10
+)
+grid <- expand.grid(x, y) %>%
+  rename(TEMP = Var1, Wind = Var2) %>%
+  modelr::add_predictions(wc_model)
+z <- reshape2::acast(grid, TEMP ~ Wind,
+  value.var = "pred"
+)
+
+# plot
+plot_ly(
+  data = weather_crimes,
+  x = ~TEMP,
+  y = ~Wind,
+  z = ~nb_crimes,
+ type = "scatter3d",
+  marker = list(size = 2, color = "black")
+) %>%
+  plotly::add_trace(
+    x = ~x,
+    y = ~y,
+    z = ~z,
+    type = "surface"
+  )
+
+```
+
+### Interactions between two continuous variables 
+There may also be cases where we hypothesize that the slope of one continuous variable on the response variable changes as the values of a second continuous variable change. In this case, we would be modeling an interaction between two continuous variables. 
+
+Fit the model using the same convention we have been using for interaction terms `*`
+```{r}
+wc_model2 <- lm(nb_crimes ~ TEMP*Wind, data=weather_crimes)
+
+# view summary
+wc_model2 %>% summary()
+```
+What does this model say about the interaction of Temp and Wind on number of crimes?
+
+To get a better sense of what may be going on, we can plot, and thankfully there's another R package called `interactions` that makes plotting interactions between two continuous variables easier:
+```{r}
+# install.packages("interactions")
+library(interactions)
+
+interact_plot(wc_model2, pred = TEMP, modx = Wind, plot.points = TRUE)
+```
+How do we interpret this plot?
+
+
+```{r}
+weather_crimes_type <- weather_crimes %>% pivot_longer(c(nb_aggravated:nb_fraud), names_to="crime_type",
+                                                       values_to="number")
+
+wc_model3 <- lm(number ~ TEMP:crime_type + Wind, data=weather_crimes_type)
+summary(wc_model3)
+
+```
+Question: What does this model suggest about seasons in explaining the relationship between temperature and crime? 
+
+### Including more variables in your model - step-wise progression
+In class we discussed theory-driven versus data-driven approaches to model development. There are a number of functions and packages that allow you to build a regression model using a data-driven approach. Try using the `stepAIC` function from the `MASS` package. It identifies the optimal set of predictors for a given dependent variable and adjusts for multi-collinearity. Why do you think the predictors below were selected?
+```{r}
+#install.packages("MASS")
+library(MASS)
+weather_crimes_type <- weather_crimes_type %>% na.omit()
+wc_step <- lm(number ~., data = weather_crimes_type)
+step <- stepAIC(wc_step, direction = "both", trace = FALSE)
+step
+```
+
+
